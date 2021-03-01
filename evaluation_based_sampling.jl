@@ -74,7 +74,7 @@ function evaluate_expression(e, sigma, l)
             return primitive_procedures[e[1]](e[2:end]...), sigma
         else
             arg_names = rho[e[1]]["arg_names"]
-            body = rho[e[1]]["body"]
+            body = deepcopy(rho[e[1]]["body"])
             for (i, arg) in enumerate(arg_names)
                 l[arg] = e[i+1]
             end
@@ -162,43 +162,27 @@ function run_probabilistic_tests()
 end
 
 
-function run_main_tests()
-    sample_list = []
-    n_tests = 4
-    pbar = ProgressBar(1:n_tests)
-    set_description(pbar, "Program")
-    for i in pbar
-        ast = daphne(["desugar", "-i", "../HW2/programs/$(i).daphne"])
-        ret, sigma = evaluate_program(ast)
-        push!(sample_list, ret)
-    end
-    return sample_list
-end
-
-
-function run_1000_samples()
+function run_main_tests(n_samples::Int)
     sample_dict = Dict(1=>[], 2=>[], 3=>[], 4=>[])
     for i in 1:4
         ast = daphne(["desugar", "-i", "../HW2/programs/$(i).daphne"])
-        pbar = ProgressBar(1:1000)
+        pbar = ProgressBar(1:n_samples)
         set_description(pbar, "Sampling from program $(i)/4")
         for _ in pbar
             ret, sigma = evaluate_program(ast)
             push!(sample_dict[i], ret)
         end
     end
-    marginal_expectation_dict = compute_marginal_expectations(sample_dict)
+    # marginal_expectation_dict = compute_marginal_expectations(sample_dict)
     # plot_histograms(sample_dict, "./results/eval_based/histograms")
-    plot_heatmaps(sample_dict, "./results/eval_based/heatmaps")
+    # plot_heatmaps(sample_dict, "./results/eval_based/heatmaps")
     return sample_dict
 end
 
 
 # ast_list, truth_list, ret_list = run_deterministic_tests()
 # pval_list = run_probabilistic_tests()
-# sample_list = run_main_tests()  # 4.daphne output: col 1 = W_0 ; col 2 = b_0; col 3:12 = W_1 ; col 13 = b_1
-
-sample_dict = run_1000_samples()
+sample_dict = run_main_tests(1000)  # 4.daphne output: col 1 = W_0 ; col 2 = b_0; col 3:12 = W_1 ; col 13 = b_1
 
 
 
