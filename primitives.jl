@@ -48,8 +48,11 @@ function get_primitives()
     primitive_procedures["sqrt"] = sqrt
 
     # logical opertators
+    primitive_procedures["="] = isequal
     primitive_procedures["<"] = <
     primitive_procedures[">"] = >
+    primitive_procedures["and"] = (x, y) -> x && y
+    primitive_procedures["or"] = (x, y) -> x || y
 
     # linear algebra opertators
     primitive_procedures["mat-transpose"] = permutedims
@@ -78,9 +81,13 @@ function get_primitives()
     primitive_procedures["uniform"] = Uniform
     primitive_procedures["discrete"] = (x...) -> Categorical(Array{Real}(x...))
     primitive_procedures["bernoulli"] = Bernoulli
+    primitive_procedures["flip"] = Bernoulli
     primitive_procedures["normal"] = Normal
     primitive_procedures["beta"] = Beta
+    primitive_procedures["gamma"] = Gamma
     primitive_procedures["exponential"] = Exponential
+    primitive_procedures["dirichlet"] = (x...) -> Dirichlet(Array{Real}(x...))
+    primitive_procedures["dirac"] = Dirac
     primitive_procedures["normalmix"] = NormalMix
 
     return primitive_procedures
