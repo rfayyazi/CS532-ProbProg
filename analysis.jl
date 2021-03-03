@@ -1,6 +1,7 @@
 module Analysis
 
-export compute_marginal_expectations, plot_histograms, plot_heatmaps
+export plot_histograms, plot_heatmaps
+export compute_marginal_expectations, compute_expectation, compute_variance
 
 using Plots
 using StatsBase
@@ -64,5 +65,28 @@ function plot_heatmaps(sample_dict, save_path)
     title!("Histograms of random variable samples")
     savefig(joinpath(save_path, "heatmap_program_3.png"))
 end
+
+
+function compute_expectation(stream::Array)
+    samples = first.(stream)
+    logWs = last.(stream)
+    W = exp.(logWs)
+    normalized_Ws = W ./ sum(W)
+    expectation = foldl(+, [samples[i] * normalized_Ws[i] for i in 1:length(samples)])
+    return expectation
+end
+
+
+function compute_variance(stream::Array)
+    # Var[X] = E[X^2] - E[X]^2
+    samples = first.(stream)
+    logWs = last.(stream)
+    W = exp.(logWs)
+    normalized_Ws = W ./ sum(W)
+    T1 = foldl(+, [(samples[i] .^ 2 * normalized_Ws[i]) for i in 1:length(samples)])
+    T2 = foldl(+, [samples[i] * normalized_Ws[i] for i in 1:length(samples)]) .^ 2
+    return T1 - T2
+end
+
 
 end

@@ -1,20 +1,16 @@
 include("./daphne.jl")
-include("./utils.jl")
 include("./primitives.jl")
-include("./tests.jl")
 include("./analysis.jl")
+include("./utils.jl")
 
 using .Daphne
-using .Utils
 using .Primitives
-using .Tests
 using .Analysis
+using .Utils
 
-using DataStructures
 using Distributions
-using ResumableFunctions
+using DataStructures
 using ProgressBars
-
 
 rho = Dict()  # user defined procedure environment
 primitive_procedures = get_primitives()
@@ -26,12 +22,12 @@ function sample_from_joint(graph)
     rv_queue = topological_sort(_g[2]["V"], _g[2]["A"])
     sigma = Dict("log_W"=>0.0)
     l = Dict()
-    for rv in rv_queue
+    for rv in rv_queueThanks 
         sample, sigma, l =  evaluate_expression(_g[2]["P"][rv], sigma, l)
         l[rv] = sample
     end
     sample, sigma, l = evaluate_expression(_g[3], sigma, l)
-    return sample
+    return sample, l
 end
 
 
@@ -117,80 +113,115 @@ function match_case(e)
 end
 
 
-@resumable function get_stream(graph, n)
-    for i in 1:convert(Int64, n)
-        sample = sample_from_joint(graph)
-        @yield sample
+function get_x_dependents(graph, k)
+    dependents = [k]
+    for n in graph[2]["A"][k]
+        if n[1] == 's'
+            push!(dependents, n)
+        end
     end
+    return dependents
 end
 
 
-function run_deterministic_tests()
-    graph_list = []
-    truth_list = []
-    ret_list = []
-    pbar = ProgressBar(1:13)
-    set_description(pbar, "Deterministic tests")
-    for i in pbar
-        if i == 13
-            continue  # skip due to compiler bug
-        end
-        graph = daphne(["graph","-i", "../HW2/programs/tests/deterministic/test_$(i).daphne"])
-        truth = load_truth("programs/tests/deterministic/test_$(i).truth")
-        ret = sample_from_joint(graph)
-        try
-            @assert istol(ret, truth)
-        catch
-            AssertionError("Returned value differs from truth for test $(i)")
-        end
-        push!(graph_list, graph)
-        push!(truth_list, truth)
-        push!(ret_list, ret)
+function accept(graph, k, X, X_, Y)
+    q  = evaluate_expression(deepcopy(graph[2]["P"][k][2]), Dict("log_W"=>0.0), X )[1]
+    q_ = evaluate_expression(deepcopy(graph[2]["P"][k][2]), Dict("log_W"=>0.0), X_)[1]
+    log_α = logpdf(q_, X[k]) - logpdf(q, X_[k])
+    Vx = [graph[2]["A"][k]; k]
+    # Vx = get_x_dependents(graph, k)
+    V  = merge(X, Y)
+    V_ = merge(X_, Y)
+    for v in Vx
+        p  = evaluate_expression(deepcopy(graph[2]["P"][v][2]), Dict("log_W"=>0.0), V )[1]
+        p_ = evaluate_expression(deepcopy(graph[2]["P"][v][2]), Dict("log_W"=>0.0), V_)[1]
+        log_α += logpdf(p_, V_[v])
+        log_α -= logpdf(p, V[v])
     end
-    return graph_list, truth_list, ret_list
+    return exp(log_α)
 end
 
 
-function run_probabilistic_tests()
-    pval_list = []
-    num_samples = 1e4
-    max_p_value = 1e-4
-    pbar = ProgressBar(1:6)
-    set_description(pbar, "Probabilistic tests")
-    for i in pbar
-        if i == 4
-            continue  # skip due to compiler bug,  "sample0" => ["sample*", Any["normal", nothing, nothing]]
+function gibbs_step(graph, X, Y)
+    for k in keys(X)
+        q = evaluate_expression(graph[2]["P"][k][2], Dict("log_W"=>0.0), X)[1]
+        X_ = deepcopy(X)
+        X_[k] = rand(q)
+        α = accept(graph, k, X, X_, Y)
+        u = rand(Uniform(0, 1))
+        if u < α
+            X = X_
         end
-        graph = daphne(["graph","-i", "../HW2/programs/tests/probabilistic/test_$(i).daphne"])
-        truth = load_truth("programs/tests/probabilistic/test_$(i).truth")
-        # sample = sample_from_joint(graph)
-        stream = get_stream(graph, num_samples)
-        p_val = run_prob_test(stream, truth, num_samples)
-        push!(pval_list, p_val)
-        @assert p_val > max_p_value
     end
-    return pval_list
+    return X
 end
 
 
-function run_main_tests(n_samples::Int)
-    sample_dict = Dict(1=>[], 2=>[], 3=>[], 4=>[])
-    for i in 1:4
-        graph = daphne(["graph", "-i", "../HW2/programs/$(i).daphne"])
-        pbar = ProgressBar(1:n_samples)
-        set_description(pbar, "Sampling from program $(i)/4")
-        for _ in pbar
-            sample = sample_from_joint(graph)
-            push!(sample_dict[i], sample)
-        end
+function gibbs(graph, n_samples)
+    samples = []
+    X, Y = init_vars(graph)
+    push!(samples, X)
+    for i in ProgressBar(1:n_samples)
+        X = gibbs_step(graph, X, Y)
+        push!(samples, X)
     end
-    # marginal_expectation_dict = compute_marginal_expectations(sample_dict)
-    # plot_histograms(sample_dict, "./results/graph_based/histograms")
-    # plot_heatmaps(sample_dict, "./results/graph_based/heatmaps")
-    return sample_dict
+    return samples
 end
 
 
-# graph_list, truth_list, ret_list = run_deterministic_tests()
-# pval_list = run_probabilistic_tests()
-# sample_dict = run_main_tests(1000)
+function init_vars(graph)
+    samples, l = sample_from_joint(graph)
+    X = Dict()
+    Y = Dict()
+    for (k, v) in l
+        if k[1] == 's'
+            X[k] = v
+        elseif k[1] == 'o'
+            Y[k] = v
+        end
+    end
+    return X, Y
+end
+
+
+function get_Q(graph, X)
+    Q = Dict()
+    for (label, expr) in graph[2]["P"]
+        if label[1] == 's'
+            Q[label] = evaluate_expression(expr[2], Dict("log_W"=>0.0), X)[1]
+        end
+    end
+    return Q
+end
+
+
+function get_samples(program_idx::Int, n_samples::Int)
+    graph = daphne(["graph", "-i", "../CS532-ProbProg-Assignment/programs_HW3/$(program_idx).daphne"])
+    samples = gibbs(graph, n_samples)
+    return samples
+end
+
+
+function main(n_samples::Number)
+    n_samples = convert(Int64, n_samples)
+    samples_dict = OrderedDict()
+    expectations_dict = OrderedDict()
+    variance_dict = OrderedDict()
+    for i in 1:4  # 5
+        print("Testing on program $(i) ... ")
+        # samples_dict[i] = get_samples(i, n_samples)
+        graph = daphne(["graph", "-i", "../CS532-ProbProg-Assignment/programs_HW3/$(program_idx).daphne"])
+        samples_dict[i] = gibbs(graph, n_samples)
+        if isa(samples_dict[i][1][1], Bool)
+            samples_dict[i] = [(convert(Int64, s), w) for (s, w) in samples_dict[i]]
+        end
+        expectations_dict[i] = compute_expectation(samples_dict[i])
+        variance_dict[i] = compute_variance(samples_dict[i])
+        print("Done. \n")
+    end
+    return samples_dict, expectations_dict, variance_dict
+end
+
+# samples_dict, expectations_dict, variance_dict = main(10)
+samples = get_samples(1, 10000000)
+mean([d["sample2"] for d in samples])
