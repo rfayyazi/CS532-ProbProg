@@ -22,7 +22,7 @@ function sample_from_joint(graph)
     rv_queue = topological_sort(_g[2]["V"], _g[2]["A"])
     sigma = Dict("log_W"=>0.0)
     l = Dict()
-    for rv in rv_queueThanks 
+    for rv in rv_queue
         sample, sigma, l =  evaluate_expression(_g[2]["P"][rv], sigma, l)
         l[rv] = sample
     end
@@ -215,13 +215,13 @@ function main(n_samples::Number)
         if isa(samples_dict[i][1][1], Bool)
             samples_dict[i] = [(convert(Int64, s), w) for (s, w) in samples_dict[i]]
         end
-        expectations_dict[i] = compute_expectation(samples_dict[i])
-        variance_dict[i] = compute_variance(samples_dict[i])
+        expectations_dict[i] = mean([d["sample2"] for d in samples])
+        # variance_dict[i] = compute_variance(samples_dict[i])
         print("Done. \n")
     end
-    return samples_dict, expectations_dict, variance_dict
+    return samples_dict, expectations_dict  # , variance_dict
 end
 
 # samples_dict, expectations_dict, variance_dict = main(10)
-samples = get_samples(1, 10000000)
-mean([d["sample2"] for d in samples])
+# samples = get_samples(1, 1e7)
+# mean([d["sample2"] for d in samples])
