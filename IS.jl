@@ -140,3 +140,15 @@ function main(n_samples::Number)
 end
 
 samples_dict, expectations_dict, variance_dict = main(1e4)
+
+# expectations_dict
+# 1 => 7.10179
+# 2 => [2.11181, -0.346656]
+# 3 => 0.424771
+# 4 => 0.312953
+
+# variance_dict
+# 1 => 0.661564
+# 2 => [0.0568294, 0.910442]
+# 3 => 0.244341
+# 4 => 0.215014

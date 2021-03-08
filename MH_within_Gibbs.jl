@@ -12,6 +12,7 @@ using Distributions
 using DataStructures
 using ProgressBars
 
+
 rho = Dict()  # user defined procedure environment
 primitive_procedures = get_primitives()
 
@@ -113,30 +114,42 @@ function match_case(e)
 end
 
 
-function get_x_dependents(graph, k)
-    dependents = [k]
-    for n in graph[2]["A"][k]
-        if n[1] == 's'
-            push!(dependents, n)
+function init_vars(graph)
+    samples, l = sample_from_joint(deepcopy(graph))
+    X = Dict()
+    Y = Dict()
+    for (k, v) in l
+        if k[1] == 's'
+            X[k] = v
+        elseif k[1] == 'o'
+            Y[k] = v
         end
     end
-    return dependents
+    return X, Y, samples
 end
 
 
 function accept(graph, k, X, X_, Y)
     q  = evaluate_expression(deepcopy(graph[2]["P"][k][2]), Dict("log_W"=>0.0), X )[1]
     q_ = evaluate_expression(deepcopy(graph[2]["P"][k][2]), Dict("log_W"=>0.0), X_)[1]
-    log_α = logpdf(q_, X[k]) - logpdf(q, X_[k])
+    if isa(q, DiscreteNonParametric)
+        log_α = logpdf(q_, X[k] + 1) - logpdf(q, X_[k] + 1)
+    else
+        log_α = logpdf(q_, X[k]) - logpdf(q, X_[k])
+    end
     Vx = [graph[2]["A"][k]; k]
-    # Vx = get_x_dependents(graph, k)
     V  = merge(X, Y)
     V_ = merge(X_, Y)
     for v in Vx
         p  = evaluate_expression(deepcopy(graph[2]["P"][v][2]), Dict("log_W"=>0.0), V )[1]
         p_ = evaluate_expression(deepcopy(graph[2]["P"][v][2]), Dict("log_W"=>0.0), V_)[1]
-        log_α += logpdf(p_, V_[v])
-        log_α -= logpdf(p, V[v])
+        if isa(p, DiscreteNonParametric)
+            log_α += logpdf(p_, V_[v] + 1)
+            log_α -= logpdf(p, V[v] + 1)
+        else
+            log_α += logpdf(p_, V_[v])
+            log_α -= logpdf(p, V[v])
+        end
     end
     return exp(log_α)
 end
@@ -144,9 +157,16 @@ end
 
 function gibbs_step(graph, X, Y)
     for k in keys(X)
-        q = evaluate_expression(graph[2]["P"][k][2], Dict("log_W"=>0.0), X)[1]
+        if k == "sample6" || k == "sample7" || k == "sample9"
+            stop = true
+        end
         X_ = deepcopy(X)
-        X_[k] = rand(q)
+        q = evaluate_expression(deepcopy(graph[2]["P"][k][2]), Dict("log_W"=>0.0), X)[1]
+        sample = rand(q)
+        if isa(q, DiscreteNonParametric)
+            sample -= 1  # because get must use 0 based indexing to be consistent with daphne
+        end
+        X_[k] = sample
         α = accept(graph, k, X, X_, Y)
         u = rand(Uniform(0, 1))
         if u < α
@@ -159,69 +179,54 @@ end
 
 function gibbs(graph, n_samples)
     samples = []
-    X, Y = init_vars(graph)
-    push!(samples, X)
+    X, Y, sample = init_vars(deepcopy(graph))
+    push!(samples, sample)
     for i in ProgressBar(1:n_samples)
-        X = gibbs_step(graph, X, Y)
-        push!(samples, X)
+        X = gibbs_step(deepcopy(graph), X, Y)
+        sample = evaluate_expression(deepcopy(graph[3]), Dict("log_W"=>0.0), X)[1]
+        push!(samples, sample)
     end
     return samples
 end
 
 
-function init_vars(graph)
-    samples, l = sample_from_joint(graph)
-    X = Dict()
-    Y = Dict()
-    for (k, v) in l
-        if k[1] == 's'
-            X[k] = v
-        elseif k[1] == 'o'
-            Y[k] = v
-        end
+function get_stats(sample_streams::OrderedDict)
+    expectations_dict = OrderedDict()
+    variance_dict = OrderedDict()
+    for (k, v) in sample_streams
+        expectations_dict[k] = mean(samples_dict[k])
+        variance_dict[k] = mean([s .^ 2 for s in samples_dict[k]]) - (expectations_dict[k] .^ 2)
     end
-    return X, Y
-end
-
-
-function get_Q(graph, X)
-    Q = Dict()
-    for (label, expr) in graph[2]["P"]
-        if label[1] == 's'
-            Q[label] = evaluate_expression(expr[2], Dict("log_W"=>0.0), X)[1]
-        end
-    end
-    return Q
-end
-
-
-function get_samples(program_idx::Int, n_samples::Int)
-    graph = daphne(["graph", "-i", "../CS532-ProbProg-Assignment/programs_HW3/$(program_idx).daphne"])
-    samples = gibbs(graph, n_samples)
-    return samples
+    return expectations_dict, variance_dict
 end
 
 
 function main(n_samples::Number)
     n_samples = convert(Int64, n_samples)
     samples_dict = OrderedDict()
-    expectations_dict = OrderedDict()
-    variance_dict = OrderedDict()
     for i in 1:4  # 5
-        print("Testing on program $(i) ... ")
-        # samples_dict[i] = get_samples(i, n_samples)
-        graph = daphne(["graph", "-i", "../CS532-ProbProg-Assignment/programs_HW3/$(program_idx).daphne"])
+        graph = daphne(["graph", "-i", "../CS532-ProbProg-Assignment/programs_HW3/$(i).daphne"])
         samples_dict[i] = gibbs(graph, n_samples)
-        if isa(samples_dict[i][1][1], Bool)
-            samples_dict[i] = [(convert(Int64, s), w) for (s, w) in samples_dict[i]]
+        if isa(samples_dict[i][1], Bool)
+            samples_dict[i] = [convert(Int64, s) for s in samples_dict[i]]
         end
-        expectations_dict[i] = mean([d["sample2"] for d in samples])
-        # variance_dict[i] = compute_variance(samples_dict[i])
-        print("Done. \n")
     end
-    return samples_dict, expectations_dict  # , variance_dict
+    return samples_dict, expectations_dict, variance_dict
 end
 
-# samples_dict, expectations_dict, variance_dict = main(10)
-# samples = get_samples(1, 1e7)
-# mean([d["sample2"] for d in samples])
+
+samples_dict = main(1e5)
+expectations_dict, variance_dict = get_stats(samples_dict)
+
+
+# expectations_dict with 100 samples
+# 1 => 7.30177
+# 2 => [2.15636, -0.53384]
+# 3 => 0.690553
+# 4 => 0.321377
+
+# variance_dict with 100 samples
+# 1 => 0.892789
+# 2 => [0.0624608, 0.925648]
+# 3 => 0.21369
+# 4 => 0.218094
