@@ -8,7 +8,9 @@ using .Analysis
 
 using Distributions
 using DataStructures
-
+using Plots
+using JSON
+using ProgressBars
 
 # initialize global environments
 rho = Dict()  # user defined procedure environment
@@ -104,7 +106,7 @@ function likelihood_weighting(ast, n_samples::Int)
     _ast = _ast[1]
     # sigma = Dict("log_W"=>0.0)
     samples = []
-    for i in 1:n_samples
+    for i in ProgressBar(1:n_samples)
         l = Dict()
         sigma = Dict("log_W"=>0.0)
         sample, sigma = evaluate_expression(deepcopy(_ast), sigma, l)
@@ -127,17 +129,25 @@ function main(n_samples::Number)
     expectations_dict = OrderedDict()
     variance_dict = OrderedDict()
     for i in 1:4  # 5
-        print("Testing on program $(i) ... ")
+        # print("Testing on program $(i) ... ")
         samples_dict[i] = get_samples(i, n_samples)
         if isa(samples_dict[i][1][1], Bool)
             samples_dict[i] = [(convert(Int64, s), w) for (s, w) in samples_dict[i]]
         end
         expectations_dict[i] = compute_expectation(samples_dict[i])
         variance_dict[i] = compute_variance(samples_dict[i])
-        print("Done. \n")
+        # print("Done. \n")
     end
     return samples_dict, expectations_dict, variance_dict
 end
+
+
+# function sample_histograms(save_path::String, samples_dict::OrderedDict)
+#     for (k, v) in samples_dict
+#         for
+#     end
+# end
+
 
 samples_dict, expectations_dict, variance_dict = main(1e4)
 

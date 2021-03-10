@@ -211,7 +211,7 @@ function main(n_samples::Number)
             samples_dict[i] = [convert(Int64, s) for s in samples_dict[i]]
         end
     end
-    return samples_dict, expectations_dict, variance_dict
+    return samples_dict
 end
 
 
